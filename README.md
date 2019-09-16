@@ -12,17 +12,11 @@
 컴파일 방법 (How to build)
 ===========
 
-* CMake를 사용하여 컴파일 합니다.
+* Nvcc를 사용하여 컴파일 합니다.
 
-CMake를 사용하여 컴파일 하는 과정은 다음과 같습니다.
+컴파일 하는 과정은 다음과 같습니다.
 ```bash
 ~: $ nvcc -o TCGemm -arch=sm_70 -lcublas -lcurand simpleTensorCoreGEMM.cu
 ```
 
-Running
-=======
 
-* build 폴더 내부에 MNIST의 데이터를 넣어두었습니다. 그냥 실행하시면 됩니다.  
-* 컴파일 후에 생성된 바이너리가 있는 폴더 (build)에 MNIST의 데이터가 필요합니다.
-* 이후 자동적으로 실행이 됩니다.
-* Volta (V100) 기준으로 0.76ms, TitanX에서 1.54ms, P100에서 1.14ms가 소요됩니다.
