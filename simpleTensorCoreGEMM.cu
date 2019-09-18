@@ -63,6 +63,7 @@ using namespace nvcuda;
 
 
 // The only dimensions currently supported by WMMA
+// 텐서코어는 16*16행렬을 4*4 행렬로 나눠서 계산함
 const int WMMA_M = 16;
 const int WMMA_N = 16;
 const int WMMA_K = 16;
@@ -85,11 +86,19 @@ __global__ void wmma_example(half *a, half *b, float *c, int M, int N, int K, fl
    int warpN = (blockIdx.y * blockDim.y + threadIdx.y);
  
    // Declare the fragments
+   /* a fragment is a templated type with template parameters describing which matrix the fragment holds (A, B or accumulator)
+   the shape of the overall WMMA operation, the data type and, for A and B matrices, whether the data is row or column major
+   */
+
+   // Per-Thread fragments to hold components of matrices for use with Tensor Cores
+   // template<typename Use, int m, int n, int k, typename T, typename Layout=void> class fragment
+
    wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, wmma::col_major> a_frag;
    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::col_major> b_frag;
    wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, float> acc_frag;
    wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, float> c_frag;
 
+   // The initialization step is to fill the accumulator fragment with zeros.
    wmma::fill_fragment(acc_frag, 0.0f);
 
    // Loop over k
@@ -102,11 +111,17 @@ __global__ void wmma_example(half *a, half *b, float *c, int M, int N, int K, fl
 
       // Bounds checking
       if (aRow < M && aCol < K && bRow < K && bCol < N) {
+
          // Load the inputs
+         // Warp-level operation to fetch components of matrices into fragments
+         // void load_matrix_sync(fragment<...> &a, const T* mptr, unsigned ldm)
+
          wmma::load_matrix_sync(a_frag, a + aRow + aCol * lda, lda);
          wmma::load_matrix_sync(b_frag, b + bRow + bCol * ldb, ldb);
  
          // Perform the matrix multiplication
+         // Warp-level operation to perform matrix multiply and accumulate
+         // void mma_sync(fragment<...> &d, const fragment<...> &a, const fragment<...> &b, const fragment<...> &c)
          wmma::mma_sync(acc_frag, a_frag, b_frag, acc_frag);
 
       }
@@ -125,6 +140,7 @@ __global__ void wmma_example(half *a, half *b, float *c, int M, int N, int K, fl
       }
 
       // Store the output
+      // Warp-level operation to fetch components of matrices into fragments
       wmma::store_matrix_sync(c + cRow + cCol * ldc, c_frag, ldc, wmma::mem_col_major);
    }
 }
@@ -175,6 +191,7 @@ int main(int argc, char* argv[]) {
    cudaErrCheck(cudaMalloc((void**)&a_fp16, MATRIX_M * MATRIX_K * sizeof(half)));
    cudaErrCheck(cudaMalloc((void**)&b_fp16, MATRIX_K * MATRIX_N * sizeof(half)));
 
+   // Result variables for cuBLAS, WMMA, Default
    cudaErrCheck(cudaMalloc((void**)&c, MATRIX_M * MATRIX_N * sizeof(float)));
    cudaErrCheck(cudaMalloc((void**)&c_cublas, MATRIX_M * MATRIX_N * sizeof(float)));
    cudaErrCheck(cudaMalloc((void**)&c_wmma, MATRIX_M * MATRIX_N * sizeof(float)));
@@ -210,6 +227,12 @@ int main(int argc, char* argv[]) {
    dim3 blockDim;
  
    // blockDim.x must be a multple of warpSize
+   // In Volta
+   /*
+   	   MaxThread per Warp (32), Max Warp per SM (64), Max Thread per SM (2048), Max Thread Blocks per SM (32)
+   	   Max Thread Block Size (1024)
+   */
+
    // 128x4 means we have 16 warps and a block computes a 64x64 output tile
    blockDim.x = 128;
    blockDim.y = 4;
@@ -221,8 +244,6 @@ int main(int argc, char* argv[]) {
    cudaErrCheck(cudaEventRecord(startWMMA));
    wmma_example <<< gridDim, blockDim >>> (a_fp16, b_fp16, c_wmma, MATRIX_M, MATRIX_N, MATRIX_K, alpha, beta);
    cudaErrCheck(cudaEventRecord(stopWMMA));
-
-
    
    // Now using cuBLAS
    printf("Running with cuBLAS...\n");
