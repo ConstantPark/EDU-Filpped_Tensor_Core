@@ -15,10 +15,10 @@
 
 컴파일 하는 과정은 다음과 같습니다.
 ```bash
-~: $ nvcc -o TCGemm -arch=sm_70 -lcublas -lcurand simpleTensorCoreGEMM.cu
+: $ nvcc -o TCGemm -arch=sm_70 -lcublas -lcurand simpleTensorCoreGEMM.cu
 ```
 실행 결과는 다음과 같습니다.
 ```bash
-~wmma took 689.984497ms, cublas took 96.523262ms
+wmma took 689.984497ms, cublas took 96.523262ms
 ```
 
